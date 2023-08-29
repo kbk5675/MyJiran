@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <cstring>
+#include <chrono>
 
 class FileScanManager;
 class ThreadManager;
@@ -38,6 +39,10 @@ private:
 	void			GetAllDrivers();
 	void			InitDisplay();
 	void			SetData(int count, CStatic& static_value);
+	
+	int				CalcScanTime(
+						std::chrono::time_point<std::chrono::steady_clock> startTime,
+						std::chrono::time_point<std::chrono::steady_clock> endTime);
 
 private:
 	CMFCTESTDlg* m_mainDlg;
