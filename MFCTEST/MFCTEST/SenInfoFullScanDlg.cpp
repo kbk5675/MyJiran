@@ -4,8 +4,9 @@
 #include "MFCTESTDlg.h"
 #include "FileScannerManager.h"
 #include "OfficeManager.h"
-#include <chrono>
+
 #include <fileapi.h>
+#include "EThreadState.h"
 
 #define GetKeeperMgr	OfficeManager::GetOfficeMgr()
 #define GetFileScanMgr	OfficeManager::GetOfficeMgr()->GetFileScanManager()
@@ -25,6 +26,8 @@ SenInfoFullScanDlg::SenInfoFullScanDlg(CWnd* pParent /*=nullptr*/)
 
 SenInfoFullScanDlg::~SenInfoFullScanDlg()
 {
+
+
 	m_mainDlg	= nullptr;
 	m_time		= 0;
 }
@@ -51,7 +54,7 @@ BOOL SenInfoFullScanDlg::OnInitDialog()
 	if (!CDialogEx::OnInitDialog())
 		return FALSE;
 
-	m_hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	m_hEvent = CreateEvent(NULL, FALSE, FALSE, L"terminate_sensitive_scan");
 
 	this->SetWindowTextW(L"검사중");
 	GetDlgItem(IDOK)->ShowWindow(SW_HIDE);
@@ -90,9 +93,8 @@ UINT SenInfoFullScanDlg::ThreadScanTimer(LPVOID _mothod)
 	while (GetThreadMgr->GetThreadState("thread_scanTimer") == EThreadState::RUNNING)
 	{
 		auto endTime = std::chrono::high_resolution_clock::now();
-		std::chrono::milliseconds currentSeconds = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-
-		int currentTime = static_cast<int>(currentSeconds.count());
+		
+		int currentTime = g_thisDlg->CalcScanTime(startTime, endTime);
 
 		CString currentTime_cstr;
 		currentTime_cstr.Format(_T("%d.%d"), currentTime / 1000, (currentTime % 1000) / 10);
@@ -120,32 +122,19 @@ void SenInfoFullScanDlg::FullScan()
 		// 파일 스캔 시작
 		while (GetFileScanMgr->StartFullScan(wstr.c_str()) != true)
 		{
-			InitDisplay();
-			
+			InitDisplay(); 
+		
 		}
-
+		
 		this->SetWindowTextW(L"검사완료");
 
 		GetFileScanMgr->Reset();
 		GetFileScanMgr->StopSearchInfo();
-
-
-		auto result = WaitForSingleObject(m_hEvent, INFINITE);
-		if (result == WAIT_FAILED)
-		{
-			return;
-		}
-		else if (result == WAIT_ABANDONED)
-		{
-			ResetEvent(m_hEvent);
-		}
-		else if (result == WAIT_TIMEOUT)
-		{
-			ResetEvent(m_hEvent);
-			GetThreadMgr->DestroyThread("thread_scanTimer");
-			GetThreadMgr->StopThread("thread_FullScan");
-		}
+		GetThreadMgr->DestroyThread("thread_scanTimer");
 	}
+
+	SetEvent(m_hEvent);
+	GetThreadMgr->StopThread("thread_FullScan");
 }
 
 void SenInfoFullScanDlg::GetAllDrivers()
@@ -178,31 +167,41 @@ void SenInfoFullScanDlg::InitDisplay()
 
 void SenInfoFullScanDlg::SetData(int count, CStatic& static_value)
 {
-	CString cstr;
-	cstr.Format(_T("%d"), count);
-	static_value.SetWindowText(cstr);
-	cstr.Empty();
+	if (static_value)
+	{
+		CString cstr;
+		cstr.Format(_T("%d"), count);
+		static_value.SetWindowText(cstr);
+		cstr.Empty();
+
+	}	
+}
+
+int SenInfoFullScanDlg::CalcScanTime(std::chrono::time_point<std::chrono::steady_clock> startTime,
+	std::chrono::time_point<std::chrono::steady_clock> endTime)
+{
+	std::chrono::milliseconds currentSeconds = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+	int currentTime = static_cast<int>(currentSeconds.count());
+
+	return currentTime;
 }
 
 void SenInfoFullScanDlg::OnSysCommand(UINT nID, LPARAM lParam)
 {
 	// TODO: 여기에 메시지 처리기 코드를 추가 및/또는 기본값을 호출합니다.
 
-	if (nID == SC_CLOSE)
+	if (GetThreadMgr->GetThreadState("thread_search_infomation") == EThreadState::RUNNING)
 	{
-		//종료버튼 눌릴 시
+		if (nID != SC_CLOSE)
+		{
+			CDialogEx::OnSysCommand(nID, lParam);
+		}
 	}
-	else if (nID == SC_MAXIMIZE)
+	else
 	{
-		//최대화 버튼 눌릴 시
+		if (nID == SC_CLOSE)
+		{
+			CDialogEx::OnSysCommand(nID, lParam);
+		}
 	}
-	else if (nID == SC_MINIMIZE)
-	{
-		//최소화 버튼 눌릴 시
-	}
-	else if (nID == SC_RESTORE)
-	{
-		//복원 상황에서
-	}
-	CDialogEx::OnSysCommand(nID, lParam);
 }
